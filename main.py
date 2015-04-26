@@ -1,3 +1,6 @@
+import subprocess as sp
+from collections import defaultdict
+
 class Config:
 	# Reads configuration file and stores configurable variables
 	def __init__(self):
@@ -24,8 +27,12 @@ class StateTracker:
 		pass
 
 class Task:
-	def __init__(self):
+	# Base task class. All tasks should subclass it, reimplementing
+	# its methods if necessary
+	def __init__(self, uname, depends_on=()):
 		self._is_done = False
+		self.uname = uname
+		self.dependencies = depends_on
 	
 	def run(self):
 		# Attempt to run task
@@ -37,26 +44,63 @@ class Task:
 		# Indicates whether task finished successfully or not
 		return self._is_done
 
+class TaskProcedure(Task):
+	def __init__(self, procedure_name, procedure_args, uname, depends_on=()):
+		self.procedure_name = procedure_name
+		self.procedure_args = procedure_args
+		super().__init__(uname, depends_on)
+	
+	def run(self):
+		return sp.call(self.procedure_name, *self.procedure_args)
+
 class TaskManager:
 	# Arranges tasks based on their dependencies on each other
 	# Upon iteration returns iterable of tasks that can be run in
 	# current iteration
 	def __init__(self):
-		pass
+		self._runnable_tasks = []
+		self._delayed_tasks = []
+		self._dependent_tasks = defaultdict(list)
+		self._tasks_finished = []
+		self.is_done = False
 	
 	def add(self, task):
 		# Adds task to inner list for subsequent build()
-		#!!stub
-		pass
+		#self._tasks[task.uname] = task
+		if len(task.dependencies) == 0:
+			self._runnable_tasks.append(task)
+		else:
+			self._delayed_tasks.append(task)
+			for dependency in task.dependencies:
+				self._dependent_tasks[dependency].append(task)
 	
 	def build(self):
 		# Attempts to build actual task graph based on added tasks and 
 		# their dependencies
-		#!!stub
-		pass
+		if len(self._runnable_tasks) == 0:
+			#!! throw exception
+			pass
 	
-	def __iter__(self):
-		yield ()
+	def start(self):
+		while len(self._tasks_finished) < len(self._runnable_tasks) + len(self._delayed_tasks):
+			for task in self._runnable_tasks[:]:
+				task.run()
+				if task.is_done == True:
+					# Task finished normally. Add it to finished tasks
+					self._tasks_finished.append(task.uname)
+					# Notify dependent tasks
+					for dependent_task in self._dependent_tasks[task.uname][:]:
+						dependent_task.satisfy_dependency(task.uname)
+						if len(dependent_task.dependencies) == 0:
+							# This task has no more unsatisfied dependencies
+							# and therefore can be run normally
+							self._runnable_tasks.append(dependent_task)
+							self._delayed_tasks.remove(delayed_task)
+							self._dependent_tasks[task.uname].remove(depentent_task)
+				else:
+					#!!stop processing tasks and quit
+					break
+		self.is_done = True
 
 def main():
 	config = Config()
@@ -69,15 +113,11 @@ def main():
 			task_manager.add(task)
 		
 		task_manager.build()
-		
-		#run tasks
-		for tasks in task_manager:
-			for task in tasks:
-				task.run()
-				if not task.is_done:
-					#running task failed. save graph state, report error and quit
-					state_tracker.save_state(task_graph)
-					exit(1)
+		task_manager.start()
+		if not task_manager.is_done:
+			#running task failed. save manager state, report error and quit
+			state_tracker.save_state(task_manager)
+			exit(1)
 	
 	return 0
 
